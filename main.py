@@ -12,8 +12,10 @@ from torch.autograd import Variable
 from sklearn import preprocessing
 
 
-if len(sys.argv) != 2:
-  print('usage ./main {train/test}')
+if len(sys.argv) < 2:
+  print('usage ./main {train/test} or')
+  print('      ./main test positives')
+  print('to only test positive values')
   exit()
 
 arg = sys.argv[1]
@@ -23,6 +25,11 @@ if arg == 'train':
 elif arg == 'test':
   print('testing model ...')
   is_training = False
+  if len(sys.argv) > 2 and sys.argv[2] == 'positives':
+    print('using positive values only for evaluation')
+    use_positives = True
+  else:
+    use_positives = False
 else:
   print('use train or test as arg')
   exit()
@@ -59,7 +66,7 @@ test_x = pd.DataFrame(test_x)
 
 # Declare the model
 class LogisticRegression(nn.Module):
-  
+
   def __init__(self, input_dim, output_dim):
     super(LogisticRegression, self).__init__()
     self.linear = torch.nn.Linear(input_dim, output_dim)
@@ -68,22 +75,22 @@ class LogisticRegression(nn.Module):
     out = torch.sigmoid(self.linear(x))
     return out
 
-
-# estabilish params for model, loss, and optimizer
-input_dim = train_x.shape[1]
-output_dim = 1
-
-criterion = nn.BCELoss(reduction='mean')
-learning_rate = 0.01
-
-model = LogisticRegression(input_dim, output_dim)
-optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
-
-[w, b] = model.parameters()
-
-target_tensors = torch.tensor(train_y, dtype=torch.float)
-
 if is_training:
+
+  # estabilish params for model, loss, and optimizer
+  input_dim = train_x.shape[1]
+  output_dim = 1
+
+  criterion = nn.BCELoss(reduction='mean')
+  learning_rate = 0.01
+
+  model = LogisticRegression(input_dim, output_dim)
+  optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+
+  [w, b] = model.parameters()
+
+  target_tensors = torch.tensor(train_y, dtype=torch.float)
+
   # train
   loss_list = []
   num_iters = train_x.shape[0]
@@ -93,7 +100,7 @@ if is_training:
       # create tensor of df row for this iter
       input_data = train_x.iloc[iter]
       input_tensor = torch.tensor(input_data)
-      
+
       # create the target
       target_value = target_tensors[iter].item()
       target = torch.tensor([target_value])
@@ -130,6 +137,15 @@ if is_training:
 
 
 if not is_training:
+  # declare hyperparameters
+  input_dim = test_x.shape[1]
+  output_dim = 1
+
+  # load model
+  model = LogisticRegression(input_dim, output_dim)
+  state_dict = torch.load('./model.pt')
+  model.load_state_dict(state_dict)
+
   # create tensor for test set
   eval_target_tensors = torch.tensor(test_y, dtype=torch.float)
 
@@ -140,11 +156,17 @@ if not is_training:
   # evaluate over test set for accuracy
   for i in range(test_x.shape[0]):
     # create the inputs for evaluation
-    input_data = test_x.iloc[i]  
+    input_data = test_x.iloc[i]
     input_tensor = torch.tensor(input_data)
-    
+
     # create evaluation targets
     target_value = eval_target_tensors[i].item()
+
+    # test accuracy of JUST positive candidates
+    # (it is a pulsar)
+    if use_positives:
+      if not int(target_value) == 1:
+        continue
     target = torch.tensor([target_value])
 
     with torch.no_grad():
@@ -157,7 +179,7 @@ if not is_training:
         correct += 1
 
       total += 1
-  
+
   accuracy = (correct / total) * 100
   print('accuracy: {}%'.format(accuracy))
 
